@@ -1,14 +1,18 @@
 package com.rotalog.service;
 
 import com.rotalog.domain.Veiculo;
+import com.rotalog.repository.VeiculoRepository;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
 /**
  * VeiculoService - Legacy service with mixed responsibilities
- * This service contains business logic, validation, and presentation concerns
+ * This service contains business logic, validation, and notification concerns
  * Intentional technical debt for the course
  * 
  * TODO: Break this into smaller services
@@ -16,17 +20,47 @@ import java.util.Optional;
  * TODO: Move notification logic to separate service
  * TODO: Add proper error handling
  */
+@Slf4j
 @Service
 public class VeiculoService {
 
-    // TODO: Inject repository
-    // TODO: Add logging
-    // TODO: Add metrics
+    @Autowired // FIXME: deveria usar injeção por construtor
+    private VeiculoRepository veiculoRepository;
+
+    @Autowired
+    private NotificacaoClient notificacaoClient; // FIXME: acoplamento direto com outro serviço
+
+    /**
+     * Lista todos os veículos
+     * 
+     * FIXME: Sem paginação - pode retornar milhares de registros
+     * FIXME: Sem cache
+     */
+    public List<Veiculo> listarTodos() {
+        log.info("Listando todos os veículos"); // misturando pt/en nos logs
+        return veiculoRepository.findAll();
+    }
+
+    /**
+     * Busca veículo por ID
+     */
+    public Veiculo buscarPorId(Long id) {
+        return veiculoRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Veículo não encontrado: " + id)); // FIXME: Use proper exception
+    }
+
+    /**
+     * Busca veículo por placa
+     */
+    public Veiculo buscarPorPlaca(String placa) {
+        return veiculoRepository.findByPlaca(placa)
+                .orElseThrow(() -> new RuntimeException("Veículo não encontrado com placa: " + placa));
+    }
 
     /**
      * Registra um novo veículo no sistema
      * 
-     * FIXME: This method is too long and does too many things
+     * FIXME: This method does too many things
      * FIXME: Validation logic is mixed with business logic
      * FIXME: No proper error handling
      */
@@ -38,6 +72,12 @@ public class VeiculoService {
 
         if (placa.length() != 7) {
             throw new RuntimeException("Placa deve ter 7 caracteres"); // FIXME: Use proper exception
+        }
+
+        // Verifica duplicidade
+        Optional<Veiculo> existente = veiculoRepository.findByPlaca(placa);
+        if (existente.isPresent()) {
+            throw new RuntimeException("Veículo com placa " + placa + " já existe"); // FIXME: Use proper exception
         }
 
         // Validação do modelo
@@ -52,7 +92,7 @@ public class VeiculoService {
 
         // Criar veículo
         Veiculo veiculo = new Veiculo();
-        veiculo.setPlaca(placa);
+        veiculo.setPlaca(placa.toUpperCase());
         veiculo.setModelo(modelo);
         veiculo.setAnoFabricacao(anoFabricacao);
         veiculo.setStatus("ATIVO");
@@ -60,34 +100,89 @@ public class VeiculoService {
         veiculo.setDataCadastro(LocalDateTime.now());
         veiculo.setDataAtualizacao(LocalDateTime.now());
 
-        // TODO: Save to database
-        // TODO: Send notification
-        // TODO: Log event
-        // TODO: Update cache
+        Veiculo salvo = veiculoRepository.save(veiculo);
+        log.info("Veículo registrado: {} - {}", salvo.getPlaca(), salvo.getModelo());
 
-        return veiculo;
+        // Notificar api-notificacoes sobre novo veículo
+        try {
+            notificacaoClient.enviarNotificacao(
+                "NOVO_VEICULO",
+                "gestor@rotalog.com",
+                "Novo veículo cadastrado: " + salvo.getPlaca() + " - " + salvo.getModelo()
+            );
+        } catch (Exception e) {
+            // FIXME: Engolindo exceção - se a notificação falhar, o veículo já foi salvo
+            log.error("Erro ao enviar notificação de novo veículo: {}", e.getMessage());
+            System.out.println("WARN: Falha ao notificar sobre novo veículo"); // FIXME: misturando System.out com logger
+        }
+
+        return salvo;
+    }
+
+    /**
+     * Atualiza dados do veículo
+     * 
+     * FIXME: Atualiza todos os campos sem verificar quais mudaram
+     * FIXME: Sem validação de campos individuais
+     */
+    public Veiculo atualizarVeiculo(Long id, String modelo, Integer anoFabricacao, Long quilometragem) {
+        Veiculo veiculo = buscarPorId(id);
+
+        if (modelo != null && !modelo.isEmpty()) {
+            veiculo.setModelo(modelo);
+        }
+        if (anoFabricacao != null) {
+            veiculo.setAnoFabricacao(anoFabricacao);
+        }
+        if (quilometragem != null) {
+            if (quilometragem < veiculo.getQuilometragem()) {
+                // FIXME: deveria lançar exceção, não apenas logar
+                log.warn("Tentativa de reduzir quilometragem do veículo {}: {} -> {}", 
+                    id, veiculo.getQuilometragem(), quilometragem);
+            }
+            veiculo.setQuilometragem(quilometragem);
+        }
+
+        veiculo.setDataAtualizacao(LocalDateTime.now());
+        return veiculoRepository.save(veiculo);
     }
 
     /**
      * Atualiza quilometragem do veículo
      * 
      * FIXME: Mixing concerns - this should be in a separate service
-     * FIXME: No validation of negative values
      * FIXME: No audit trail
      */
-    public void atualizarQuilometragem(Long veiculoId, Long novaQuilometragem) {
-        // TODO: Fetch from database
-        // TODO: Validate
-        // TODO: Update
-        // TODO: Notify
-        // TODO: Log
+    public Veiculo atualizarQuilometragem(Long veiculoId, Long novaQuilometragem) {
+        Veiculo veiculo = buscarPorId(veiculoId);
 
         if (novaQuilometragem < 0) {
-            // FIXME: This should never happen but we're not validating
-            System.out.println("AVISO: Quilometragem negativa detectada!"); // FIXME: Use logger
+            throw new RuntimeException("Quilometragem não pode ser negativa"); // FIXME: Use proper exception
         }
 
-        // TODO: Implement
+        if (novaQuilometragem < veiculo.getQuilometragem()) {
+            System.out.println("AVISO: Quilometragem menor que a atual!"); // FIXME: Use logger
+        }
+
+        veiculo.setQuilometragem(novaQuilometragem);
+        veiculo.setDataAtualizacao(LocalDateTime.now());
+        
+        Veiculo atualizado = veiculoRepository.save(veiculo);
+
+        // Verificar se precisa de manutenção preventiva
+        if (precisaDeManutencao(veiculoId)) {
+            try {
+                notificacaoClient.enviarNotificacao(
+                    "ALERTA_MANUTENCAO",
+                    "gestor@rotalog.com",
+                    "Veículo " + veiculo.getPlaca() + " atingiu " + novaQuilometragem + " km. Agendar manutenção preventiva."
+                );
+            } catch (Exception e) {
+                log.error("Falha ao enviar alerta de manutenção: {}", e.getMessage());
+            }
+        }
+
+        return atualizado;
     }
 
     /**
@@ -95,19 +190,13 @@ public class VeiculoService {
      * 
      * FIXME: Hardcoded status values
      * FIXME: No pagination
-     * FIXME: No filtering options
      */
     public List<Veiculo> obterVeiculosPorStatus(String status) {
-        // FIXME: Hardcoded status values
         if (!status.equals("ATIVO") && !status.equals("INATIVO") && !status.equals("MANUTENCAO")) {
-            throw new RuntimeException("Status inválido"); // FIXME: Use proper exception
+            throw new RuntimeException("Status inválido: " + status); // FIXME: Use proper exception
         }
 
-        // TODO: Query database
-        // TODO: Apply filters
-        // TODO: Return results
-
-        return null; // FIXME: Not implemented
+        return veiculoRepository.findByStatus(status);
     }
 
     /**
@@ -115,27 +204,27 @@ public class VeiculoService {
      * 
      * FIXME: Complex business logic mixed with infrastructure concerns
      * FIXME: Hardcoded maintenance intervals
-     * FIXME: No transaction management
      */
     public void agendarManutencaoPreventiva(Long veiculoId, Long quilometragemLimite) {
-        // TODO: Fetch vehicle
-        // TODO: Check current mileage
-        // TODO: Calculate next maintenance date
-        // TODO: Create maintenance record
-        // TODO: Send notification to manager
-        // TODO: Update vehicle status
-        // TODO: Log event
-        // TODO: Update cache
+        Veiculo veiculo = buscarPorId(veiculoId);
 
         // FIXME: Hardcoded intervals
         Long intervaloQuilometragem = 10000L;
         Integer intervaloMeses = 3;
 
-        // FIXME: No proper date calculation
-        // FIXME: No timezone handling
-        // FIXME: No daylight saving time handling
+        log.info("Manutenção preventiva agendada para veículo {} em {} km", 
+            veiculo.getPlaca(), quilometragemLimite);
 
-        System.out.println("Manutenção agendada para " + quilometragemLimite + " km"); // FIXME: Use logger
+        // Notificar sobre agendamento
+        try {
+            notificacaoClient.enviarNotificacao(
+                "MANUTENCAO_AGENDADA",
+                "gestor@rotalog.com",
+                "Manutenção preventiva agendada para veículo " + veiculo.getPlaca() + " em " + quilometragemLimite + " km"
+            );
+        } catch (Exception e) {
+            log.error("Falha ao notificar agendamento de manutenção: {}", e.getMessage());
+        }
     }
 
     /**
@@ -143,134 +232,87 @@ public class VeiculoService {
      * 
      * FIXME: Business logic hardcoded
      * FIXME: No configuration management
-     * FIXME: No currency handling
      */
     public Double calcularCustoManutencao(String modelo, Long quilometragem) {
         // FIXME: Hardcoded costs
         Double custoPorKm = 0.05;
         Double custoBase = 500.0;
 
-        // FIXME: No model-specific pricing
-        // FIXME: No volume discounts
-        // FIXME: No seasonal adjustments
-
         return custoBase + (quilometragem * custoPorKm);
-    }
-
-    /**
-     * Registra evento de veículo
-     * 
-     * FIXME: No proper event sourcing
-     * FIXME: No audit trail
-     * FIXME: No event versioning
-     */
-    public void registrarEvento(Long veiculoId, String tipoEvento, String descricao) {
-        // TODO: Create event record
-        // TODO: Store in database
-        // TODO: Publish event
-        // TODO: Update cache
-        // TODO: Log event
-
-        // FIXME: Mixing concerns
-        System.out.println("Evento registrado: " + tipoEvento); // FIXME: Use logger
-    }
-
-    /**
-     * Obtém histórico de manutenção
-     * 
-     * FIXME: No pagination
-     * FIXME: No filtering
-     * FIXME: No sorting
-     */
-    public List<String> obterHistoricoManutencao(Long veiculoId) {
-        // TODO: Query database
-        // TODO: Apply filters
-        // TODO: Sort results
-        // TODO: Paginate results
-        // TODO: Cache results
-
-        return null; // FIXME: Not implemented
     }
 
     /**
      * Verifica se veículo precisa de manutenção
      * 
-     * FIXME: Complex business logic
      * FIXME: Hardcoded thresholds
-     * FIXME: No proper date handling
      */
     public Boolean precisaDeManutencao(Long veiculoId) {
-        // TODO: Fetch vehicle
-        // TODO: Check mileage against threshold
-        // TODO: Check last maintenance date
-        // TODO: Check maintenance alerts
-        // TODO: Return result
+        Veiculo veiculo = buscarPorId(veiculoId);
 
         // FIXME: Hardcoded threshold
         Long limiteQuilometragem = 50000L;
 
-        // FIXME: No proper date calculation
-        // FIXME: No timezone handling
-
-        return false; // FIXME: Not implemented
+        return veiculo.getQuilometragem() != null && veiculo.getQuilometragem() >= limiteQuilometragem;
     }
 
     /**
      * Desativa veículo
      * 
      * FIXME: No soft delete
-     * FIXME: No audit trail
-     * FIXME: No cascade delete handling
+     * FIXME: No cascade handling
      */
-    public void desativarVeiculo(Long veiculoId) {
-        // TODO: Fetch vehicle
-        // TODO: Check if vehicle has active deliveries
-        // TODO: Check if vehicle has pending maintenance
-        // TODO: Update vehicle status
-        // TODO: Notify relevant parties
-        // TODO: Log event
-        // TODO: Update cache
+    public Veiculo desativarVeiculo(Long veiculoId) {
+        Veiculo veiculo = buscarPorId(veiculoId);
+        veiculo.setStatus("INATIVO");
+        veiculo.setDataAtualizacao(LocalDateTime.now());
 
-        System.out.println("Veículo desativado: " + veiculoId); // FIXME: Use logger
+        Veiculo desativado = veiculoRepository.save(veiculo);
+        log.info("Veículo desativado: {}", veiculo.getPlaca());
+
+        // Notificar sobre desativação
+        try {
+            notificacaoClient.enviarNotificacao(
+                "VEICULO_DESATIVADO",
+                "gestor@rotalog.com",
+                "Veículo " + veiculo.getPlaca() + " foi desativado"
+            );
+        } catch (Exception e) {
+            log.error("Falha ao notificar desativação: {}", e.getMessage());
+        }
+
+        return desativado;
     }
 
     /**
      * Reativa veículo
-     * 
-     * FIXME: No validation of reactivation conditions
-     * FIXME: No audit trail
      */
-    public void reativarVeiculo(Long veiculoId) {
-        // TODO: Fetch vehicle
-        // TODO: Check if vehicle is in good condition
-        // TODO: Check if vehicle passed inspection
-        // TODO: Update vehicle status
-        // TODO: Notify relevant parties
-        // TODO: Log event
-        // TODO: Update cache
+    public Veiculo reativarVeiculo(Long veiculoId) {
+        Veiculo veiculo = buscarPorId(veiculoId);
+        veiculo.setStatus("ATIVO");
+        veiculo.setDataAtualizacao(LocalDateTime.now());
 
-        System.out.println("Veículo reativado: " + veiculoId); // FIXME: Use logger
+        log.info("Veículo reativado: {}", veiculo.getPlaca());
+        return veiculoRepository.save(veiculo);
     }
 
     /**
      * Obtém estatísticas de frota
      * 
-     * FIXME: Complex query logic
-     * FIXME: No caching
-     * FIXME: No pagination
+     * FIXME: Typo in method name (Freita instead of Frota)
+     * FIXME: No proper response object
      */
     public String obterEstatisticasFreita() {
-        // TODO: Query database for fleet statistics
-        // TODO: Calculate averages
-        // TODO: Calculate totals
-        // TODO: Format response
-        // TODO: Cache results
+        // FIXME: Typo no nome do método nunca foi corrigido
+        long totalVeiculos = veiculoRepository.count();
+        long ativos = veiculoRepository.findByStatus("ATIVO").size(); // FIXME: Deveria ser count query
+        long inativos = veiculoRepository.findByStatus("INATIVO").size();
+        long emManutencao = veiculoRepository.findByStatus("MANUTENCAO").size();
 
-        // FIXME: Typo in method name (Freita instead of Frota)
-        // FIXME: No proper response object
-        // FIXME: No error handling
-
-        return "{}"; // FIXME: Not implemented
+        // FIXME: Retornando JSON como String em vez de usar DTO
+        return String.format(
+            "{\"total\": %d, \"ativos\": %d, \"inativos\": %d, \"em_manutencao\": %d}",
+            totalVeiculos, ativos, inativos, emManutencao
+        );
     }
 
     /**
@@ -278,30 +320,20 @@ public class VeiculoService {
      * 
      * FIXME: No retry logic
      * FIXME: No circuit breaker
-     * FIXME: No timeout handling
      */
     public void sincronizarComSistemaExterno() {
-        // TODO: Connect to external system
-        // TODO: Fetch data
-        // TODO: Transform data
-        // TODO: Update local database
-        // TODO: Handle conflicts
-        // TODO: Log events
-        // TODO: Update cache
-
-        // FIXME: No error handling
-        // FIXME: No retry logic
-        // FIXME: No timeout
-
+        // FIXME: URL hardcoded
+        log.info("Sincronização com sistema externo iniciada");
         System.out.println("Sincronização iniciada"); // FIXME: Use logger
+
+        // TODO: Implementar integração real
+        // TODO: Adicionar retry logic
+        // TODO: Adicionar circuit breaker
     }
 
-    // TODO: Add more methods for vehicle management
     // TODO: Add proper exception handling
-    // TODO: Add logging
     // TODO: Add metrics
     // TODO: Add caching
-    // TODO: Add validation
     // TODO: Add authorization checks
     // TODO: Add audit trail
 }
