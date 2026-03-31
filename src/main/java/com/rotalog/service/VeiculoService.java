@@ -24,11 +24,11 @@ import java.util.Optional;
 @Service
 public class VeiculoService {
 
-    @Autowired // FIXME: deveria usar injeção por construtor
+    @Autowired
     private VeiculoRepository veiculoRepository;
 
     @Autowired
-    private NotificacaoClient notificacaoClient; // FIXME: acoplamento direto com outro serviço
+    private NotificacaoClient notificacaoClient;
 
     /**
      * Lista todos os veículos
