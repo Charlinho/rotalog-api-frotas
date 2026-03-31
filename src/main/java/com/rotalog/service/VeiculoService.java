@@ -1,6 +1,7 @@
 package com.rotalog.service;
 
 import com.rotalog.domain.Veiculo;
+import com.rotalog.exception.ResourceNotFoundException;
 import com.rotalog.repository.VeiculoRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -46,7 +47,7 @@ public class VeiculoService {
      */
     public Veiculo buscarPorId(Long id) {
         return veiculoRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Veículo não encontrado: " + id)); // FIXME: Use proper exception
+                .orElseThrow(() -> new ResourceNotFoundException("Veículo não encontrado: " + id));
     }
 
     /**
