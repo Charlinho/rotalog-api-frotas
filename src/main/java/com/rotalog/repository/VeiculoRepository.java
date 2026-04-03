@@ -33,6 +33,8 @@ public interface VeiculoRepository extends JpaRepository<Veiculo, Long> {
     @Query("SELECT v FROM Veiculo v WHERE v.status = 'ATIVO' AND v.quilometragem > :limite")
     List<Veiculo> findVeiculosAtivosComQuilometragemAlta(@Param("limite") Long limite);
 
+    long countByStatus(String status);
+
     // TODO: Adicionar query para veículos que precisam de manutenção
     // TODO: Adicionar query para veículos por ano de fabricação
     // TODO: Adicionar paginação
