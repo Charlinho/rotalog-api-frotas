@@ -27,6 +27,9 @@ public interface ManutencaoRepository extends JpaRepository<Manutencao, Long> {
     @Query(value = "SELECT * FROM manutencoes WHERE veiculo_id = :veiculoId ORDER BY data_manutencao DESC LIMIT 1", nativeQuery = true)
     Manutencao findUltimaManutencao(@Param("veiculoId") Long veiculoId);
 
+    @Query(value = "SELECT data_manutencao FROM manutencoes WHERE veiculo_id = :veiculoId AND status = 'CONCLUIDA' ORDER BY data_manutencao DESC LIMIT 1", nativeQuery = true)
+    java.time.LocalDateTime findDataUltimaManutencaoConcluida(@Param("veiculoId") Long veiculoId);
+
     // TODO: Adicionar query para manutenções pendentes por período
     // TODO: Adicionar paginação
 }

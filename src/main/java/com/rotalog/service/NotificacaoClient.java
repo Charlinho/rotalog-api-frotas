@@ -37,7 +37,7 @@ public class NotificacaoClient {
      * FIXME: Sem validação de resposta
      * FIXME: Engolindo exceções no chamador
      */
-    public void enviarNotificacao(String tipo, String destinatario, String mensagem) {
+    public String enviarNotificacao(String tipo, String destinatario, String mensagem) {
         try {
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
@@ -56,11 +56,10 @@ public class NotificacaoClient {
             restTemplate.postForEntity(url, request, String.class);
 
             log.info("Notificação enviada com sucesso: tipo={}", tipo);
+            return "ENVIADO";
         } catch (Exception e) {
-            // FIXME: Engolindo exceção - apenas logando
             log.error("Erro ao enviar notificação: tipo={}, erro={}", tipo, e.getMessage());
-            // FIXME: Sem retry, sem fallback, sem dead letter queue
-            throw e; // re-throw para o chamador decidir o que fazer
+            return "FALHA";
         }
     }
 
