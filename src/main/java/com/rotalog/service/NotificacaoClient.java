@@ -1,6 +1,7 @@
 package com.rotalog.service;
 
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -38,9 +39,13 @@ public class NotificacaoClient {
      * FIXME: Engolindo exceções no chamador
      */
     public String enviarNotificacao(String tipo, String destinatario, String mensagem) {
+        String correlationId = MDC.get("correlationId");
         try {
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
+            if (correlationId != null) {
+                headers.set("X-Correlation-ID", correlationId);
+            }
 
             Map<String, String> body = new HashMap<>();
             body.put("tipo", tipo);
@@ -51,14 +56,14 @@ public class NotificacaoClient {
             HttpEntity<Map<String, String>> request = new HttpEntity<>(body, headers);
 
             String url = NOTIFICACAO_API_URL + "/api/notificacoes";
-            log.info("Enviando notificação para {}: tipo={}, destinatario={}", url, tipo, destinatario);
+            log.info("Chamando api-notificacoes: url={}, tipo={}, destinatario={}", url, tipo, destinatario);
 
-            restTemplate.postForEntity(url, request, String.class);
+            var response = restTemplate.postForEntity(url, request, String.class);
 
-            log.info("Notificação enviada com sucesso: tipo={}", tipo);
+            log.info("Resposta api-notificacoes: statusCode={}, tipo={}", response.getStatusCode().value(), tipo);
             return "ENVIADO";
         } catch (Exception e) {
-            log.error("Erro ao enviar notificação: tipo={}, erro={}", tipo, e.getMessage());
+            log.error("Falha ao chamar api-notificacoes: tipo={}, erro={}", tipo, e.getMessage());
             return "FALHA";
         }
     }

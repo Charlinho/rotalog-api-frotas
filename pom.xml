@@ -73,6 +73,13 @@
       <artifactId>spring-boot-starter-logging</artifactId>
     </dependency>
 
+    <!-- Structured JSON logging (7.2 is the last version compatible with Logback 1.2 / Spring Boot 2.7) -->
+    <dependency>
+      <groupId>net.logstash.logback</groupId>
+      <artifactId>logstash-logback-encoder</artifactId>
+      <version>7.2</version>
+    </dependency>
+
     <!-- Testing -->
     <dependency>
       <groupId>org.springframework.boot</groupId>

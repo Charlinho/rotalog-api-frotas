@@ -6,11 +6,13 @@ import com.rotalog.repository.AlertaManutencaoRepository;
 import com.rotalog.repository.ManutencaoRepository;
 import com.rotalog.repository.VeiculoRepository;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.UUID;
 
 @Slf4j
 @Service
@@ -44,17 +46,26 @@ public class AlertaManutencaoService {
 
 	@Scheduled(cron = "${veiculo.manutencao.alerta.cron:0 0 6 * * *}")
 	public void executarVerificacaoDiaria() {
-		log.info("Iniciando verificação diária de alertas de manutenção preventiva");
-		verificarEGerarAlertas();
-		processarAlertas();
+		String correlationId = UUID.randomUUID().toString();
+		MDC.put("correlationId", correlationId);
+		try {
+			log.info("Iniciando verificação diária de alertas de manutenção preventiva");
+			verificarEGerarAlertas();
+			processarAlertas();
+		} finally {
+			MDC.remove("correlationId");
+		}
 	}
 
 	public void verificarEGerarAlertas() {
+		log.info("Iniciando verificação de veículos ativos");
 		List<Veiculo> veiculosAtivos = veiculoRepository.findByStatus("ATIVO");
-		log.info("Verificando {} veículos ativos para alertas de manutenção", veiculosAtivos.size());
+		log.info("Encontrados {} veículos ativos para verificação de manutenção", veiculosAtivos.size());
 
+		int alertasGerados = 0;
 		for (Veiculo veiculo : veiculosAtivos) {
 			if (alertaRepository.existsByVeiculoIdAndStatusNotificacao(veiculo.getId(), STATUS_PENDENTE)) {
+				log.debug("Veículo {} já possui alerta pendente, ignorando", veiculo.getPlaca());
 				continue;
 			}
 
@@ -70,9 +81,11 @@ public class AlertaManutencaoService {
 				alerta.setDataCriacao(LocalDateTime.now());
 				alerta.setDataAtualizacao(LocalDateTime.now());
 				alertaRepository.save(alerta);
+				alertasGerados++;
 				log.info("Alerta gerado: veiculo={}, motivo={}", veiculo.getPlaca(), motivo);
 			}
 		}
+		log.info("Verificação concluída: {} alertas gerados de {} veículos verificados", alertasGerados, veiculosAtivos.size());
 	}
 
 	public void processarAlertas() {
@@ -80,6 +93,7 @@ public class AlertaManutencaoService {
 		log.info("Processando {} alertas pendentes", pendentes.size());
 
 		for (AlertaManutencao alerta : pendentes) {
+			log.info("Enviando notificação para api-notificacoes: veiculo={}, alertaId={}", alerta.getPlaca(), alerta.getId());
 			String mensagem = montarMensagem(alerta);
 			String resultado = notificacaoClient.enviarNotificacao(
 				"ALERTA_MANUTENCAO_PREVENTIVA",
@@ -93,7 +107,7 @@ public class AlertaManutencaoService {
 				alerta.setErroMensagem("Falha ao contatar rotalog-api-notificacoes");
 			}
 			alertaRepository.save(alerta);
-			log.info("Alerta processado: veiculo={}, status={}", alerta.getPlaca(), resultado);
+			log.info("Notificação processada: veiculo={}, alertaId={}, status={}", alerta.getPlaca(), alerta.getId(), resultado);
 		}
 	}
 
